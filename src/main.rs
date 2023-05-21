@@ -101,6 +101,8 @@ struct Enemy {
     rect: Rect,
     vel: i32,
     speed: f32,
+    low: i32,
+    high: i32,
 }
 
 impl Enemy{
@@ -108,13 +110,31 @@ impl Enemy{
         Self{
             rect: Rect::new(pos.x, pos.y, ENEMY_SIZE.x, ENEMY_SIZE.y),
             vel: rand::gen_range(0, 1) * 2 - 1,
-            speed: 200f32,
+            low: 1i32,
+            high: 3i32,
+            speed: rand::gen_range(1, 3) as f32 * 100.0,
         }
     }
 
     pub fn change_speed(&mut self)
     {
-        self.speed = rand::gen_range(2.0, 4.0) * 100.0;
+        self.speed = rand::gen_range(self.low, self.high) as f32 * 100.0;
+
+    }
+
+    pub fn speed_up(&mut self, tier: i32)
+    {
+        if tier !=0
+        {
+            self.low += 1i32;
+            self.high += 1i32; 
+
+        }
+        else {              
+            self.low = 1i32;
+            self.high = 3i32;   
+
+        }
 
     }
 
@@ -271,6 +291,10 @@ async fn main() {
                 if return_apple_collision(&basket.rect, &player.rect, &mut player.has_apple) && player.has_apple == true {
                     player.has_apple = false;
                     score += 1;
+                    for enemy in enemies.iter_mut(){
+                        enemy.speed_up(score);
+                    }
+
                     if score >= 5{
                         game_state = GameState::LevelCompleted;
                     }
@@ -321,6 +345,10 @@ async fn main() {
             GameState::LevelCompleted =>{
                 if is_key_pressed(KeyCode::Space) {
                     reset_game(&mut score, &mut lives);
+                    for enemy in enemies.iter_mut(){
+                        enemy.speed_up(score);
+                        enemy.change_speed();
+                    }
                     game_state = GameState::Menu;
                 }
             },
@@ -328,6 +356,10 @@ async fn main() {
             GameState::Dead =>{
                 if is_key_pressed(KeyCode::Space) {
                     reset_game(&mut score, &mut lives);
+                    for enemy in enemies.iter_mut(){
+                        enemy.speed_up(score);
+                        enemy.change_speed();
+                    }
                     game_state = GameState::Menu;
                 }
             },
@@ -363,14 +395,14 @@ async fn main() {
                     }
         
                 );
-                let instruction_dims = measure_text("collect apples and put them in the basket", Some(font), 16u16, 1.0f32);
+                let instruction_dims = measure_text("collect apples and put them in the basket", Some(font), 18u16, 1.0f32);
                 draw_text_ex(
                     &format!("collect apples and put them in the basket"),
-                    screen_width() - instruction_dims.width - 10f32,
-                    20f32,
+                    screen_width() - instruction_dims.width - 15f32,
+                    30f32,
                     TextParams {
                         font,
-                        font_size: 16u16,
+                        font_size: 18u16,
                         color: BLUE,
                         ..Default::default()
                     }
