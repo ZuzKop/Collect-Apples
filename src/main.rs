@@ -1,9 +1,32 @@
 use macroquad::prelude::*;
 
 const PLAYER_SIZE: f32 = 25f32;
-const ENEMY_SIZE: Vec2 = const_vec2!([180f32, 30f32]);
+const ENEMY_SIZE: Vec2 = const_vec2!([165f32, 35f32]);
 const PLAYER_SPEED: f32 = 200f32;
 const APPLE_SIZE: f32 = 10f32;
+
+pub fn draw_title_text(text: &str, font: Font)
+{
+    let dims = measure_text(text, Some(font), 50u16, 1.0f32);
+    draw_text_ex(
+        text,
+        screen_width() * 0.5f32 - dims.width * 0.5f32,
+        screen_height() * 0.5f32 - dims.height * 0.5f32,
+        TextParams {
+            font,
+            font_size: 50u16,
+            color: BLACK,
+            ..Default::default()
+        },
+    );
+}
+
+pub enum GameState{
+    Menu,
+    Game,
+    LevelCompleted,
+    Dead,
+}
 
 struct Player{
 rect: Rect,
@@ -91,7 +114,7 @@ impl Enemy{
 
     pub fn change_speed(&mut self)
     {
-        self.speed = rand::gen_range(2.0, 6.0) * 100.0;
+        self.speed = rand::gen_range(2.0, 4.0) * 100.0;
 
     }
 
@@ -124,12 +147,22 @@ pub struct Apple{
 }
 
 impl Apple {
-    pub fn new(pos: Vec2) -> Self{
+    pub fn new() -> Self{
         Self{
-            rect: Rect::new(pos.x, pos.y, APPLE_SIZE, APPLE_SIZE),
+            rect: Rect::new(
+                rand::gen_range(1, 9) as f32 / 10f32 * screen_width(),
+                60f32 + rand::gen_range(0, 2) as f32 * 80f32,
+                APPLE_SIZE,
+                APPLE_SIZE),
             picked: false,
         }
     } 
+
+    pub fn update(&mut self, new_pos: &Rect, dt: f32)
+    {
+        self.rect.x = new_pos.x + 2f32;
+        self.rect.y = new_pos.y + 1f32;
+    }
 
     pub fn draw(&self){
         draw_rectangle(self.rect.x, self.rect.y, self.rect.w, self.rect.h, RED);
@@ -147,7 +180,7 @@ impl Basket{
         }
     }
     pub fn draw(&self){
-        draw_rectangle(self.rect.x, self.rect.y, self.rect.w, self.rect.h, GRAY);
+        draw_rectangle(self.rect.x, self.rect.y, self.rect.w, self.rect.h, ORANGE);
     }
 }
 
@@ -175,11 +208,20 @@ fn enemy_player_collision(a: &Rect, b: &Rect) -> bool{
     false
 }
 
+fn reset_game(
+    score: &mut i32,
+    lives: &mut i32,
+){
+    *lives = 3;
+    *score = 0;
+}
+
 #[macroquad::main("projekt")]
 async fn main() {
     let font = load_ttf_font("res/Comfortaa-VariableFont_wght.ttf")
         .await
         .unwrap();
+    let mut game_state = GameState::Menu;
     let mut score = 0;
     let mut lives = 3;
     let mut player = Player::new();
@@ -187,7 +229,6 @@ async fn main() {
     let mut apples = Vec::<Apple>::new();
     let basket = Basket::new();
 
-    //BLOKI
     let enemy_number = 4;
     for i in 0..enemy_number{
         let pos_y =  80f32 + i as f32 * ENEMY_SIZE.y + i as f32 * 45f32;
@@ -195,41 +236,103 @@ async fn main() {
         enemies.push(Enemy::new(vec2(pos_x, pos_y)));
     }
 
-    apples.push(Apple::new(vec2(screen_width() * 0.5f32, 30f32)));
+    apples.push(Apple::new());
 
-    //GAME LOOP
     loop{
-        player.update(get_frame_time());
         clear_background(WHITE);
         
-        for enemy in enemies.iter_mut(){
-            enemy.update(get_frame_time());
-        }
- 
-        for apple in apples.iter_mut(){
-            if pick_apple_collision(&mut apple.rect, &mut apple.picked, &player.rect, &mut player.has_apple){
-                apple.picked = true;
-                player.has_apple = true;
-            }
-        }
-        
-        if return_apple_collision(&basket.rect, &player.rect, &mut player.has_apple) && player.has_apple == true {
-            player.has_apple = false;
-            score += 1;
-            apples.push(Apple::new(vec2(screen_width() * 0.5f32, 30f32)));
-        }
-
-        for enemy in enemies.iter_mut(){
-            if enemy_player_collision(&enemy.rect, &player.rect){
-                player.restart_position();
-                if apples.len() < 1 {
-                apples.push(Apple::new(vec2(screen_width() * 0.5f32, 30f32)));
+        match game_state{
+            GameState::Menu =>{
+                if is_key_pressed(KeyCode::Space) {
+                    game_state = GameState::Game;
                 }
-                lives -= 1;
-            }
-        }
+            },
+
+            GameState::Game =>{
+                
+                player.update(get_frame_time());
+
+                for enemy in enemies.iter_mut(){
+                    enemy.update(get_frame_time());
+                }
+         
+                for apple in apples.iter_mut(){
+                    if pick_apple_collision(&mut apple.rect, &mut apple.picked, &player.rect, &mut player.has_apple){
+                        apple.picked = true;
+                        player.has_apple = true;
+                    }
+                    if apple.picked == true{
+                        apple.update(&player.rect, get_frame_time());
+                    }
+
+
+                }
+                
+                if return_apple_collision(&basket.rect, &player.rect, &mut player.has_apple) && player.has_apple == true {
+                    player.has_apple = false;
+                    score += 1;
+                    if score >= 5{
+                        game_state = GameState::LevelCompleted;
+                    }
+                    apples.push(Apple::new());
+                    apples.retain(|apple| apple.picked == false );
+                }
         
-        apples.retain(|apple| apple.picked == false );
+                for enemy in enemies.iter_mut(){
+                    if enemy_player_collision(&enemy.rect, &player.rect){
+                        player.restart_position();
+                        apples.retain(|apple| apple.picked == false );
+                        if apples.len() < 1 {
+                        apples.push(Apple::new());
+                        }
+                        lives -= 1;
+                        if lives <=0{
+                            game_state = GameState::Dead;
+                        }
+                    }
+                }
+
+                draw_text_ex(
+                    &format!("{}",score),
+                    screen_width() * 0.5f32 + 105f32,
+                    screen_height() - 10f32,
+                    TextParams {
+                        font,
+                        font_size: 24u16,
+                        color: RED,
+                        ..Default::default()
+                    }
+        
+                );
+                draw_text_ex(
+                    &format!("lives: {}",lives),
+                    15f32,
+                    30f32,
+                    TextParams {
+                        font,
+                        font_size: 24u16,
+                        color: BLACK,
+                        ..Default::default()
+                    }
+                );       
+
+            },
+
+            GameState::LevelCompleted =>{
+                if is_key_pressed(KeyCode::Space) {
+                    reset_game(&mut score, &mut lives);
+                    game_state = GameState::Menu;
+                }
+            },
+
+            GameState::Dead =>{
+                if is_key_pressed(KeyCode::Space) {
+                    reset_game(&mut score, &mut lives);
+                    game_state = GameState::Menu;
+                }
+            },
+
+        }
 
         player.draw();
         basket.draw();
@@ -241,29 +344,62 @@ async fn main() {
             apple.draw();
         }
 
-        draw_text_ex(
-            &format!("{}",score),
-            screen_width() * 0.5f32 + 105f32,
-            screen_height() - 10f32,
-            TextParams {
-                font,
-                font_size: 24u16,
-                color: RED,
-                ..Default::default()
-            }
+        match game_state{
+            GameState::Menu =>{
+                draw_title_text("Press SPACE to start", font);
+            },
 
-        );
-        draw_text_ex(
-            &format!("lives: {}",lives),
-            15f32,
-            30f32,
-            TextParams {
-                font,
-                font_size: 24u16,
-                color: BLACK,
-                ..Default::default()
-            }
-        );
+            GameState::Game =>{
+
+                draw_text_ex(
+                    &format!("{}",score),
+                    screen_width() * 0.5f32 + 105f32,
+                    screen_height() - 10f32,
+                    TextParams {
+                        font,
+                        font_size: 24u16,
+                        color: RED,
+                        ..Default::default()
+                    }
+        
+                );
+                let instruction_dims = measure_text("collect apples and put them in the basket", Some(font), 16u16, 1.0f32);
+                draw_text_ex(
+                    &format!("collect apples and put them in the basket"),
+                    screen_width() - instruction_dims.width - 10f32,
+                    20f32,
+                    TextParams {
+                        font,
+                        font_size: 16u16,
+                        color: BLUE,
+                        ..Default::default()
+                    }
+        
+                );
+                draw_text_ex(
+                    &format!("lives: {}",lives),
+                    15f32,
+                    30f32,
+                    TextParams {
+                        font,
+                        font_size: 24u16,
+                        color: BLACK,
+                        ..Default::default()
+                    }
+                );
+        
+
+            },
+
+            GameState::LevelCompleted =>{
+                draw_title_text(&format!("you won! score: {}", score), font);
+            },
+
+            GameState::Dead =>{
+                draw_title_text(&format!("you died! score: {}", score), font);
+            },
+
+        }
         
         next_frame().await
     }
